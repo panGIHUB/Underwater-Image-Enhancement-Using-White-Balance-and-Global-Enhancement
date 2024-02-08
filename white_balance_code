@@ -1,0 +1,95 @@
+import cv2
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
+import os
+import pandas as pd
+from pathlib import Path  # Import Path for platform-independent file paths
+
+def white_balance(image):
+    # Applying simple gray world assumption for white balance
+    # Calculate the average color of the image
+    avg_color = np.mean(image, axis=(0, 1))
+    
+    # Compute the scaling factors for each channel
+    scale_factors = [avg_color[i] / channel_avg for i, channel_avg in enumerate(avg_color)]
+    
+    # Apply the scaling factors to balance the image
+    balanced_image = image * scale_factors
+    
+    # Clip values to ensure they are within the valid range [0, 255]
+    balanced_image = np.clip(balanced_image, 0, 255).astype(np.uint8)
+    
+    return balanced_image
+
+def variable_contrast_and_saturation_enhancement(image, contrast_factor, saturation_factor):
+    # Convert image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # Adjust contrast by scaling the value (V) channel
+    hsv_image[:,:,2] = np.clip(hsv_image[:,:,2] * contrast_factor, 0, 255)
+    
+    # Adjust saturation by scaling the saturation (S) channel
+    hsv_image[:,:,1] = np.clip(hsv_image[:,:,1] * saturation_factor, 0, 255)
+    
+    # Convert the image back to BGR color space
+    enhanced_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
+    
+    return enhanced_image
+
+# Input and output folder paths
+input_folder_path = 'C:\\Users\\ankaj\\Downloads\\New folder11'
+output_folder_path = str(Path.home() / "Downloads" / "output_images")  # Output folder in Downloads section
+os.makedirs(output_folder_path, exist_ok=True)
+
+# Create a DataFrame to store metrics
+metrics_list = []
+
+# Iterate over all images in the input folder
+for input_image_filename in os.listdir(input_folder_path):
+    input_image_path = os.path.join(input_folder_path, input_image_filename)
+    
+    # Read the original image
+    input_image = cv2.imread(input_image_path)
+    if input_image is None:
+        print(f"Error: Unable to read input image '{input_image_path}'. Skipping...")
+        continue
+    
+    # Resize the input image to 4K resolution
+    new_width = 3840
+    new_height = 2160
+    input_image = cv2.resize(input_image, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+    
+    # Apply white balance on input image
+    white_balanced_image = white_balance(input_image)
+    
+    # Apply variable contrast and saturation enhancement on the image
+    contrast_factor = 1.5  # if we require to enhance the quality, Adjust the contrast factor
+    saturation_factor = 1.2  # if we require to enhance the quality, Adjust the saturation factor
+    enhanced_image = variable_contrast_and_saturation_enhancement(white_balanced_image, contrast_factor, saturation_factor)
+    
+    # Save the enhanced image to the output folder
+    output_image_path = os.path.join(output_folder_path, f"enhanced_{input_image_filename}")
+    cv2.imwrite(output_image_path, enhanced_image)
+    
+    # Calculate MSE, PSNR, and SSIM of the enhanced image
+    mse = np.mean((enhanced_image.astype("float") - input_image.astype("float")) ** 2)
+    psnr = cv2.PSNR(enhanced_image, input_image)
+    ssim_value = ssim(cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2GRAY), cv2.cvtColor(input_image, cv2.COLOR_BGR2GRAY))
+    
+    # Print metrics to console
+    print(f"Image: {input_image_filename}")
+    print(f"MSE: {mse}")
+    print(f"PSNR: {psnr}")
+    print(f"SSIM: {ssim_value}")
+    
+    # Store metrics in the list
+    metrics_list.append({'Image': input_image_filename, 'MSE': mse, 'PSNR': psnr, 'SSIM': ssim_value})
+
+# Create DataFrame from the metrics list
+metrics_df = pd.DataFrame(metrics_list)
+
+# Save the metrics DataFrame to an Excel file
+excel_file_path = str(Path.home() / "Downloads" / "Enhanced_Image_Metrics.xlsx")
+metrics_df.to_excel(excel_file_path, index=False)
+
+print(f"Enhanced images and metrics saved to {output_folder_path} and {excel_file_path}")
